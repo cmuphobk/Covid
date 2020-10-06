@@ -128,6 +128,10 @@ final class NetworkService: NSObject {
                     if self.fileManager.fileExists(atPath: forSavingURL.path) {
                         try self.fileManager.removeItem(at: forSavingURL)
                     }
+                    let directory = forSavingURL.deletingLastPathComponent()
+                    if !self.fileManager.fileExists(atPath: directory.path) {
+                        try self.fileManager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
+                    }
                     try self.fileManager.moveItem(at: localURL, to: forSavingURL)
                     completion(.success(forSavingURL))
                 } catch {
@@ -155,7 +159,9 @@ final class NetworkService: NSObject {
             completion(.failure(NetworkSerivceError.unknown))
             return
         }
+        print("Request with url: \(String(describing: urlRequest?.url)) started")
         let task = session.downloadTask(with: urlRequestUnwrapped) { (localURL, response, error) in
+            print("Request with url: \(String(describing: urlRequest?.url)) finished")
             if let error = error {
                 completion(.failure(error))
                 return

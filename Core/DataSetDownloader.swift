@@ -66,19 +66,21 @@ struct DeseaseModel {
         case female = "F"
     }
     
-    enum Desease: String, CaseIterable {
+    enum Desease: String, CaseIterable, Equatable {
         case covid19 = "COVID-19"
-        
         case noFinding = "No Finding"
-        
-        case ards = "ARDS"
-        case sars = "SARS"
-        case pneumocystis = "Pneumocystis"
-        case streptococcus = "Streptococcus"
-        case klebsiella = "Klebsiella"
-        case chlamydophila = "Chlamydophila"
-        case eColi = "E.Coli"
-        case legionella = "Legionella"
+        case other = "Other"
+
+        init(findingValue: String) {
+            switch findingValue {
+            case "Pneumonia/Viral/COVID-19":
+                self = .covid19
+            case "No Finding":
+                self = .noFinding
+            default:
+                self = .other
+            }
+        }
     }
     
     enum View: String {
@@ -100,7 +102,7 @@ struct DeseaseModel {
     let offset: Int?
     let sex: Sex?
     let age: Int?
-    let finding: [Desease]
+    let finding: Desease
     let survival: YesOrNo?
     let intubated: YesOrNo?
     let temperature: Double?
@@ -128,7 +130,7 @@ extension DeseaseModel: CustomStringConvertible {
         description += "offset: [\(offset ?? -1)] \n"
         description += "sex: [\(sex?.rawValue ?? "_")] \n"
         description += "age: [\(age ?? -1)] \n"
-        description += "finding: [\(finding.map { $0.rawValue })] \n"
+        description += "finding: [\(finding.rawValue)] \n"
         description += "survival: [\(survival?.rawValue ?? "_")] \n"
         description += "intubated: [\(intubated?.rawValue ?? "_")] \n"
         description += "temperature: [\(temperature ?? -1)] \n"
@@ -170,16 +172,8 @@ extension DeseaseModel {
         return folderName
     }
     
-    var imageURLs: [URL] {
-        let documentURLs: [URL] = finding.compactMap {
-            return DeseaseModel.folder?.appendingPathComponent(DeseaseModel.folderName(for: $0)).appendingPathComponent(filename)
-        }
-        return documentURLs
-    }
-    
-    func imageURL(for desease: Desease) -> URL? {
-        guard finding.contains(desease) else { return nil }
-        return DeseaseModel.folder?.appendingPathComponent(DeseaseModel.folderName(for: desease)).appendingPathComponent(filename)
+    var imageURL: URL? {
+        return DeseaseModel.folder?.appendingPathComponent(DeseaseModel.folderName(for: finding)).appendingPathComponent(filename)
     }
 }
 
@@ -230,15 +224,27 @@ final class DataSetDownloader {
                 let models = csv.namedRows.compactMap { el in
                     return self.makeDeseaseModel(from: el)
                 }
-                let group = DispatchGroup()
-                for model in models where model.folder == "images" {
-                    group.enter()
-                    self.downloadImage(for: model) { _ in
-                        group.leave()
+                let dispatchQueue = DispatchQueue(label: "image_downloading_queue", qos: .userInitiated, attributes: .concurrent, autoreleaseFrequency: .inherit, target: nil)
+                let queue = OperationQueue()
+                queue.underlyingQueue = dispatchQueue
+                queue.maxConcurrentOperationCount = 10
+                let filtered = models.filter { $0.folder == "images" }
+                for model in filtered  {
+                    let op = BlockOperation(block: {
+                        let mutex = DispatchSemaphore(value: 0)
+                        self.downloadImage(for: model) { _ in
+                            mutex.signal()
+                        }
+                        mutex.wait()
+                    })
+                    op.completionBlock = {
+                        if queue.operations.isEmpty {
+                            DispatchQueue.main.async {
+                                completion(.success(models))
+                            }
+                        }
                     }
-                }
-                group.notify(queue: .main) {
-                    completion(.success(models))
+                    queue.addOperation(op)
                 }
             case .failure(let error):
                 completion(.failure(error))
@@ -255,8 +261,7 @@ final class DataSetDownloader {
         guard let ageValue: String = dictionary[DeseaseModelHeader.age.rawValue] else { return nil }
         let age: Int? = Int(ageValue)
         guard let findingValue: String = dictionary[DeseaseModelHeader.finding.rawValue] else { return nil }
-        let findingValueSeparated = findingValue.components(separatedBy: ", ")
-        let finding = findingValueSeparated.compactMap { DeseaseModel.Desease(rawValue: $0) }
+        let finding: DeseaseModel.Desease = DeseaseModel.Desease(findingValue: findingValue)
         guard let survivalValue: String = dictionary[DeseaseModelHeader.survival.rawValue] else { return nil }
         let survival: DeseaseModel.YesOrNo? = DeseaseModel.YesOrNo(rawValue: survivalValue)
         guard let intubatedValue: String = dictionary[DeseaseModelHeader.intubated.rawValue] else { return nil }
@@ -313,14 +318,13 @@ final class DataSetDownloader {
     
     private func downloadImage(for model: DeseaseModel, completion: @escaping (Bool) -> Void) {
         let fileRequest = FileRequest(path: "\(model.folder)/\(model.filename)")
-        let imageURLs = model.imageURLs.filter { !fileManager.fileExists(atPath: $0.path) }
-        
-        guard !imageURLs.isEmpty else {
+
+        guard let imageURL = model.imageURL else {
             completion(true)
             return
         }
         
-        networkService.download(fileRequest, to: imageURLs) { result in
+        networkService.download(fileRequest, to: imageURL) { result in
             switch result {
             case .success:
                 completion(true)

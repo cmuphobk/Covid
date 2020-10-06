@@ -17,20 +17,14 @@ final class DataModelCreator {
     init(models: [DeseaseModel], to url: URL, pretrainedModelURL: URL? = nil) throws {
         
         var groupedDeseases: [DeseaseModel.Desease: [DeseaseModel]] = [:]
-        var groupedImageURLs: [String : [URL]] = [:]
+        var groupedImageURLs: [String: [URL]] = [:]
         
         for desease in DeseaseModel.Desease.allCases {
-            let modelsWithDesease = models.filter { $0.finding.contains(desease) }
+            let modelsWithDesease = models.filter { $0.finding == desease }
             groupedDeseases[desease] = modelsWithDesease
         }
         for (key, value) in groupedDeseases {
-            groupedImageURLs[key.rawValue] = value.compactMap {
-                guard let url = $0.imageURL(for: key) else { return nil }
-                if !FileManager.default.fileExists(atPath: url.path) {
-                    return nil
-                }
-                return url
-            }
+            groupedImageURLs[key.rawValue] = value.compactMap { $0.imageURL }
         }
         
         let featureExtractorType: MLImageClassifier.FeatureExtractorType!
@@ -81,7 +75,6 @@ final class DataModelCreator {
     func prediction(from url: URL) throws -> String {
         return try imageClassifier.prediction(from: url)
     }
-
 }
 
 extension DataModelCreator: CustomStringConvertible {

@@ -432,7 +432,7 @@ extension ViewController: NSTableViewDelegate {
             tableCellTextField.stringValue = "\(model.age ?? -1)"
         } else if tableColumn?.identifier == NSUserInterfaceItemIdentifier(rawValue: DeseaseModelHeader.finding.rawValue)  {
             tableCellTextField.stringValue = "finding"
-            tableCellTextField.stringValue = "\(model.finding.map { $0.rawValue })"
+            tableCellTextField.stringValue = "\(model.finding.rawValue)"
         } else if tableColumn?.identifier == NSUserInterfaceItemIdentifier(rawValue: DeseaseModelHeader.finding.rawValue)  {
             tableCellTextField.stringValue = "survival"
             tableCellTextField.stringValue = "\(model.survival?.rawValue ?? "_")"
